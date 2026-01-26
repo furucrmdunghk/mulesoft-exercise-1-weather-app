@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	  xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	  xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<configuration-properties file="weather.properties" />
+
+	<flow name="get-weather-flow">
+		<http:listener config-ref="HTTP_Listener_config" path="/weather" doc:name="HTTP Listener" />
+		<logger level="INFO" doc:name="Logger - Input Payload" message="Input payload: #[payload]" />
+
+		<!-- Split city input -->
+		<set-variable variableName="cityName" value="#[payload.city splitBy ',']" doc:name="Set cityName variable" />
+
+		<scatter-gather doc:name="Scatter-Gather">
+			<route>
+				<set-variable variableName="city" value="#[vars.cityName[0] default '']" doc:name="Set city 1" />
+				<logger level="INFO" doc:name="Logger - Before HTTP 1" message="Getting weather for city: #[vars.city]" />
+				<http:request method="GET" doc:name="HTTP Request 1"
+					url="${weather.api.baseUrl}"
+					>
+					<http:request-builder>
+						<http:query-param paramName="q" value="#[vars.city]" />
+						<http:query-param paramName="appid" value="${weather.api.appid}" />
+					</http:request-builder>
+				</http:request>
+				<logger level="INFO" doc:name="Logger - After HTTP 1" message="Weather response for #[vars.city]: #[payload]" />
+			</route>
+			<route>
+				<set-variable variableName="city" value="#[vars.cityName[1] default '']" doc:name="Set city 2" />
+				<logger level="INFO" doc:name="Logger - Before HTTP 2" message="Getting weather for city: #[vars.city]" />
+				<http:request method="GET" doc:name="HTTP Request 2"
+					url="${weather.api.baseUrl}"
+					>
+					<http:request-builder>
+						<http:query-param paramName="q" value="#[vars.city]" />
+						<http:query-param paramName="appid" value="${weather.api.appid}" />
+					</http:request-builder>
+				</http:request>
+				<logger level="INFO" doc:name="Logger - After HTTP 2" message="Weather response for #[vars.city]: #[payload]" />
+			</route>
+		</scatter-gather>
+
+		<!-- Transform the response as needed -->
+		<logger level="INFO" doc:name="Logger - Final Payload" message="Final weather details: #[payload]" />
+	</flow>
+
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+
+</mule>
