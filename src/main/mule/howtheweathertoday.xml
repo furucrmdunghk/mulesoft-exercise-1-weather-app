@@ -18,7 +18,7 @@
 		<!-- Split city input -->
 		<set-variable variableName="cityName" value="#[(payload.city default '') splitBy ',']" />
 		<logger level="INFO" doc:name="Logger - City Names" message="City names: #[vars.cityName]" />
-		<!-- Khởi tạo biến để collect kết quả từng thành phố -->
+		<!-- Initialize variable to collect results for each city -->
 		<set-variable variableName="weatherResults" value="#[[]]" />
 		<foreach collection="#[vars.cityName]" doc:name="For Each City">
 			<set-variable variableName="city" value="#[trim(payload)]" />
@@ -31,7 +31,7 @@
 					</http:request>
 					<ee:transform doc:name="Extract body">
 						<ee:message>
-							<!-- Sửa lại: ép kiểu payload về Object thay vì giữ nguyên (tránh trường hợp payload là chuỗi JSON) -->
+							<!-- Convert payload to Object instead of keeping as-is (to avoid cases where payload is a JSON string) -->
 							<ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
@@ -48,13 +48,13 @@ else
 				</otherwise>
 			</choice>
 			<logger level="INFO" doc:name="Logger - After HTTP" message="Weather response for #[vars.city]: #[payload]" />
-			<!-- Thêm kết quả vào biến weatherResults -->
+			<!-- Add result to weatherResults variable -->
 			<set-variable variableName="weatherResults" value="#[vars.weatherResults ++ [payload]]" />
 		</foreach>
-		<!-- Sau foreach, gán lại payload là array kết quả -->
+		<!-- After foreach, set payload as the results array -->
 		<set-payload value="#[vars.weatherResults]" />
 
-		<!-- Định dạng lại kết quả trả về -->
+		<!-- Format the response result -->
 		<logger level="INFO" doc:name="Parsing Content 1" message="Parsing Content 1 #[payload]" />
 		<logger level="INFO" doc:name="Parsing Content 2" message="Parsing Content 2 #[payload.class]" />
 		<logger level="INFO" message='typeOf(payload)=#[%dw 2.0 output application/java --- typeOf(payload)]' />
@@ -64,9 +64,9 @@ else
 %dw 2.0
 output application/json
 
-// Sau foreach, payload đã là array các kết quả
+// After foreach, payload is already an array of results
 var bodies = payload
-  // chỉ giữ weather body hợp lệ (loại bỏ empty string)
+  // Keep only valid weather bodies (remove empty strings)
   filter ((b) -> (b is Object) and (b.name? and b.main?))
 
 ---
