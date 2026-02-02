@@ -18,20 +18,21 @@
 		<!-- Split city input -->
 		<set-variable variableName="cityName" value="#[(payload.city default '') splitBy ',']" />
 		<logger level="INFO" doc:name="Logger - City Names" message="City names: #[vars.cityName]" />
-		<scatter-gather doc:name="Scatter-Gather">
-			<route>
-				<set-variable variableName="city" value="#[trim((vars.cityName[0] default ''))]" />
-					<logger level="INFO" doc:name="Logger - Before HTTP 1" message="Getting weather for city: #[vars.city]" />
-				<choice doc:name="Check city 1">
-					<when expression="#[vars.city != null and vars.city != '']">
-						<http:request method="GET" doc:name="HTTP Request 1"
-							url="${weather.api.baseUrl}">
-							<http:query-params><![CDATA[#[{ q: vars.city, appid: p('weather.api.appid') }]]]></http:query-params>
-						</http:request>
-						<ee:transform doc:name="Extract body 1">
-							<ee:message>
-								<!-- Sửa lại: ép kiểu payload về Object thay vì giữ nguyên (tránh trường hợp payload là chuỗi JSON) -->
-								<ee:set-payload><![CDATA[%dw 2.0
+		<!-- Initialize variable to collect results for each city -->
+		<set-variable variableName="weatherResults" value="#[[]]" />
+		<foreach collection="#[vars.cityName]" doc:name="For Each City">
+			<set-variable variableName="city" value="#[trim(payload)]" />
+			<logger level="INFO" doc:name="Logger - Before HTTP" message="Getting weather for city: #[vars.city]" />
+			<choice doc:name="Check city">
+				<when expression="#[vars.city != null and vars.city != '']">
+					<http:request method="GET" doc:name="HTTP Request"
+						url="${weather.api.baseUrl}">
+						<http:query-params><![CDATA[#[{ q: vars.city, appid: p('weather.api.appid') }]]]></http:query-params>
+					</http:request>
+					<ee:transform doc:name="Extract body">
+						<ee:message>
+							<!-- Convert payload to Object instead of keeping as-is (to avoid cases where payload is a JSON string) -->
+							<ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
 if (payload is String)
@@ -39,47 +40,21 @@ if (payload is String)
 else
   payload
 ]]></ee:set-payload>
-							</ee:message>
-						</ee:transform>
-					</when>
-					<otherwise>
-						<set-payload value="#['']" doc:name="Empty city 1" />
-					</otherwise>
-				</choice>
-				<logger level="INFO" doc:name="Logger - After HTTP 1" message="Weather response for #[vars.city]: #[payload]" />
-			</route>
-			<route>
-				<set-variable variableName="city" value="#[trim((vars.cityName[1] default ''))]" />
-				<logger level="INFO" doc:name="Logger - Before HTTP 2" message="Getting weather for city: #[vars.city]" />
-				<choice doc:name="Check city 2">
-					<when expression="#[vars.city != null and vars.city != '']">
-						<http:request method="GET" doc:name="HTTP Request 2"
-							url="${weather.api.baseUrl}">
-							<http:query-params><![CDATA[#[{ q: vars.city, appid: p('weather.api.appid') }]]]></http:query-params>
-						</http:request>
-						<ee:transform doc:name="Extract body 2">
-							<ee:message>
-								<!-- Sửa lại: ép kiểu payload về Object thay vì giữ nguyên (tránh trường hợp payload là chuỗi JSON) -->
-								<ee:set-payload><![CDATA[%dw 2.0
-output application/java
----
-if (payload is String)
-  read(payload, "application/json")
-else
-  payload
-]]></ee:set-payload>
-							</ee:message>
-						</ee:transform>
-					</when>
-					<otherwise>
-						<set-payload value="#['']" doc:name="Empty city 2"/>
-					</otherwise>
-				</choice>
-				<logger level="INFO" doc:name="Logger - After HTTP 2" message="Weather response for #[vars.city]: #[payload]" />
-			</route>
-		</scatter-gather>
+						</ee:message>
+					</ee:transform>
+				</when>
+				<otherwise>
+					<set-payload value="#['']" doc:name="Empty city" />
+				</otherwise>
+			</choice>
+			<logger level="INFO" doc:name="Logger - After HTTP" message="Weather response for #[vars.city]: #[payload]" />
+			<!-- Add result to weatherResults variable -->
+			<set-variable variableName="weatherResults" value="#[vars.weatherResults ++ [payload]]" />
+		</foreach>
+		<!-- After foreach, set payload as the results array -->
+		<set-payload value="#[vars.weatherResults]" />
 
-		<!-- Định dạng lại kết quả trả về -->
+		<!-- Format the response result -->
 		<logger level="INFO" doc:name="Parsing Content 1" message="Parsing Content 1 #[payload]" />
 		<logger level="INFO" doc:name="Parsing Content 2" message="Parsing Content 2 #[payload.class]" />
 		<logger level="INFO" message='typeOf(payload)=#[%dw 2.0 output application/java --- typeOf(payload)]' />
@@ -89,27 +64,9 @@ else
 %dw 2.0
 output application/json
 
-fun asArray(v) =
-  // Nếu đã là array thì giữ nguyên
-  if (v is Array) v
-  // Nếu là Object thì kiểm tra tiếp
-  else if (v is Object) 
-    // Scatter-Gather Map thường có key "0","1"... -> pluck ra array values
-    if (v."0"? or v."1"?) (v pluck ((val, key, idx) -> val))
-	// Nếu là Object bình thường thì wrap vào array
-    else [v]
-  else
-    []
-	
-// Chuyển payload thành array các route responses
-var routes = asArray(payload)
-
-// unwrap từng phần tử (nếu là Mule Message thì có .payload)
-var bodies =
-  asArray(
-    routes map (r) -> (r.payload default r)
-  )
-  // chỉ giữ weather body hợp lệ
+// After foreach, payload is already an array of results
+var bodies = payload
+  // Keep only valid weather bodies (remove empty strings)
   filter ((b) -> (b is Object) and (b.name? and b.main?))
 
 ---
